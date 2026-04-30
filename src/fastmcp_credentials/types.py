@@ -44,3 +44,14 @@ class CredentialNotFoundError(CredentialError):
     def __init__(self, credential_id: str) -> None:
         super().__init__(f"Credential not found: {credential_id!r}")
         self.credential_id = credential_id
+
+
+class MissingCredentialHeaderError(CredentialError):
+    """Raised when gateway did not inject required credential headers."""
+
+    def __init__(self, missing_headers: list[str]) -> None:
+        super().__init__(
+            f"Missing credential headers: {', '.join(missing_headers)}. "
+            "Connect your account in the gateway to inject credentials."
+        )
+        self.missing_headers = missing_headers
