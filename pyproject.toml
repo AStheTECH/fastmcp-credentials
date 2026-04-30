@@ -1,0 +1,35 @@
+[project]
+name = "fastmcp-credentials"
+version = "0.1.0"
+description = "Credential injection middleware for FastMCP servers — keeps secrets out of the LLM"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastmcp>=2.0.0",
+]
+
+[project.optional-dependencies]
+hosted = [
+    "motor>=3.6.0",
+    "cryptography>=42.0.0",
+    "httpx>=0.27.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "motor>=3.6.0",
+    "cryptography>=42.0.0",
+    "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastmcp_credentials"]
