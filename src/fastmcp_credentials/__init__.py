@@ -40,9 +40,7 @@ from .config import CredentialMode, get_mode
 from .backends import (
     CredentialBackend,
     EnvCredentialBackend,
-    FileCredentialBackend,
     HeaderCredentialBackend,
-    MongoDBCredentialBackend,
 )
 
 __all__ = [
@@ -56,7 +54,5 @@ __all__ = [
     "get_mode",
     "CredentialBackend",
     "EnvCredentialBackend",
-    "FileCredentialBackend",
     "HeaderCredentialBackend",
-    "MongoDBCredentialBackend",
 ]

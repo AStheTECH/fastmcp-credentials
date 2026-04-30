@@ -4,8 +4,8 @@ from enum import Enum
 
 
 class CredentialMode(Enum):
-    HOSTED = "hosted"  # Header-only, gateway injects credentials, no DB in MCP server
-    OSS = "oss"  # Env / File / MongoDB, for local and self-hosted deployments
+    HOSTED = "hosted"  # Header-only
+    OSS = "oss"  # Env  for local and self-hosted deployments
 
 
 def get_mode() -> CredentialMode:

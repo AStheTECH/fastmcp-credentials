@@ -40,7 +40,7 @@ class HeaderCredentialBackend(CredentialBackend):
     Raises MissingCredentialHeaderError if neither token header is present.
     """
 
-    async def resolve(self, credential_id: str) -> ResolvedCredential:  # noqa: ARG002
+    async def resolve(self) -> ResolvedCredential:  # noqa: ARG002
         request = get_http_request()
         if request is None:
             raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN, _HEADER_API_KEY])
