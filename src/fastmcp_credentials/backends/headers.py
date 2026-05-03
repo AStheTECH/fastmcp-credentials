@@ -11,11 +11,11 @@ from ..types import ResolvedCredential, MissingCredentialHeaderError
 
 logger = logging.getLogger(__name__)
 
-_HEADER_ACCESS_TOKEN = "X-Mewcp-Access-Token"
-_HEADER_API_KEY = "X-Mewcp-Api-Key"
-_HEADER_SCOPES = "X-Mewcp-Scopes"
-_HEADER_EXTRA = "X-Mewcp-Extra"
-_HEADER_EXPIRES_AT = "X-Mewcp-Expires-At"
+_HEADER_ACCESS_TOKEN = "X-MCP-Cred-Access-Token"
+_HEADER_API_KEY = "X-MCP-Cred-Api-Key"
+_HEADER_SCOPES = "X-MCP-Cred-Scopes"
+_HEADER_EXTRA = "X-MCP-Cred-Extra"
+_HEADER_EXPIRES_AT = "X-MCP-Cred-Expires-At"
 
 
 class HeaderCredentialBackend(CredentialBackend):
@@ -27,8 +27,8 @@ class HeaderCredentialBackend(CredentialBackend):
     fields into outbound headers before forwarding the request to this MCP server.
 
     Required headers (at least one must be present):
-        X-Mewcp-Access-Token  — OAuth access token
-        X-Mewcp-Api-Key       — Static API key / PAT
+        X-MCP-Cred-Access-Token  — OAuth access token
+        X-MCP-Cred-Api-Key       — Static API key / PAT
 
     Optional headers:
         X-Mewcp-Scopes      — CSV ("read,write") or JSON array ("["read","write"]")
