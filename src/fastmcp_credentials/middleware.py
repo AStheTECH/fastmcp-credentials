@@ -7,6 +7,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_http_request
 
 from .backends.base import CredentialBackend
+from .backends.headers import HeaderCredentialBackend
 from .types import ResolvedCredential
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,21 @@ class CredentialMiddleware(Middleware):
         request = get_http_request()
         credential_id: str | None = request.headers.get(self.header) if request else None
 
+        # HeaderCredentialBackend doesn't need X-Credential-ID — it reads from request headers directly
+        if isinstance(self.backend, HeaderCredentialBackend):
+            logger.debug("Resolving credentials from request headers (HeaderCredentialBackend)")
+            try:
+                creds = await self.backend.resolve()
+                token = _current_credential.set(creds)
+                try:
+                    return await call_next(context)
+                finally:
+                    _current_credential.reset(token)
+            except Exception:
+                # If credential resolution fails, let the error propagate
+                raise
+
+        # For other backends, require X-Credential-ID header
         if not credential_id:
             logger.debug(
                 "No %s header present — proceeding without credential injection. "
