@@ -12,6 +12,6 @@ class CredentialBackend(ABC):
     """
 
     @abstractmethod
-    async def resolve(self, credential_id: str) -> ResolvedCredential:
-        """Return fully resolved (decrypted) credentials for the given ID."""
+    async def resolve(self) -> ResolvedCredential:
+        """Return fully resolved (decrypted) credentials."""
         ...

@@ -2,14 +2,14 @@
 
 Secure credential injection middleware for [FastMCP](https://github.com/jlowin/fastmcp) servers.
 
-Keeps secrets completely out of the LLM — credentials travel in HTTP headers, are resolved server-side, and injected into tools transparently. The AI agent never sees tokens, API keys, or client secrets.
+Keeps secrets completely out of the LLM — credentials are resolved server-side and injected into tools transparently. The AI agent never sees tokens, API keys, or client secrets.
 
 ## How it works
 
-1. A request arrives with an `X-Credential-ID` header (e.g. `cred_abc123`).
-2. `CredentialMiddleware` intercepts the tool call, resolves the credential from the configured backend, and stores it in a request-scoped `ContextVar`.
-3. Your tool calls `get_credentials()` — a plain sync function, no `await`, no `ctx` — to get the resolved credential.
-4. After the tool returns, the `ContextVar` is reset. Credentials never leak between requests.
+1. `CredentialMiddleware` intercepts tool calls and resolves credentials via the configured backend.
+2. Credentials are stored in a request-scoped `ContextVar` (no leaking between requests).
+3. Your tool calls `get_credentials()` — a plain sync function, no `await`, no `ctx` — to access them.
+4. After the tool returns, the `ContextVar` is reset.
 
 The LLM only ever sees your tool's business parameters. Auth is invisible to it by design.
 
@@ -21,17 +21,11 @@ The LLM only ever sees your tool's business parameters. Auth is invisible to it 
 pip install fastmcp-credentials
 ```
 
-For the MongoDB-backed backend (hosted / production deployments):
-
-```bash
-pip install 'fastmcp-credentials[hosted]'
-```
-
 ---
 
-## Quick start — Static API key (default)
+## Quick start — Static API key (environment variables)
 
-The most common case: your service uses a single API key.
+The most common case: your service uses a single API key from environment variables.
 
 ```bash
 export MYSERVICE_API_KEY=sk-abc123...
@@ -55,41 +49,11 @@ def search(query: str) -> list:
     return response.json()
 ```
 
-`EnvCredentialBackend` defaults to `static` mode. No `CRED_TYPE` env var needed unless you want OAuth.
-
 ---
 
-## Extra credential fields
+## Quick start — OAuth (environment variables)
 
-Some providers require more than the standard fields — a key + secret, a tenant ID alongside an OAuth token, etc. `{PREFIX}EXTRA_{NAME}` env vars work for **both** `static` and `oauth` types and are collected into `cred.extra`:
-
-```bash
-# Works with static auth
-export MYSERVICE_API_KEY=pk-live-abc123
-export MYSERVICE_EXTRA_API_SECRET=sk-live-xyz789
-export MYSERVICE_EXTRA_ACCOUNT_ID=acct_42
-
-# Works with OAuth too
-export MYSERVICE_CRED_TYPE=oauth
-export MYSERVICE_ACCESS_TOKEN=ya29...
-export MYSERVICE_EXTRA_TENANT_ID=tenant-xyz
-```
-
-```python
-@mcp.tool()
-def create_charge(amount: int) -> dict:
-    creds = get_credentials()
-    return client.charge(
-        api_key=creds.api_key,
-        secret=creds.extra["api_secret"],
-        account=creds.extra["account_id"],
-        amount=amount,
-    )
-```
-
----
-
-## Quick start — OAuth
+For OAuth tokens, set `CRED_TYPE=oauth`:
 
 ```bash
 export MYSERVICE_CRED_TYPE=oauth
@@ -118,65 +82,69 @@ def list_items(folder_id: str) -> list:
 
 ---
 
-## Using a credentials file
+## Hosted mode — Gateway-injected credentials
 
-For local development with multiple credentials, use `FileCredentialBackend` and a JSON file.
-
-**Flat format (single credential):**
-
-```json
-{
-  "type": "static",
-  "api_key": "sk-abc123",
-  "extra": { "account_id": "acct_42" }
-}
-```
-
-**Keyed format (multiple credentials) — `X-Credential-ID` selects the entry:**
-
-```json
-{
-  "cred_user1": { "type": "static", "api_key": "sk-user1key" },
-  "cred_user2": { "type": "oauth",  "access_token": "ya29...", "refresh_token": "1//..." }
-}
-```
+For hosted deployments where a gateway injects resolved credentials as HTTP headers:
 
 ```python
-from fastmcp_credentials import CredentialMiddleware, FileCredentialBackend
+from fastmcp import FastMCP
+from fastmcp_credentials import CredentialMiddleware, HeaderCredentialBackend, get_credentials
 
-backend = FileCredentialBackend("credentials.json")
+backend = HeaderCredentialBackend()
 mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+
+@mcp.tool()
+def call_api(resource_id: str) -> dict:
+    creds = get_credentials()
+    return requests.get(
+        f"https://api.example.com/resources/{resource_id}",
+        headers={"Authorization": f"Bearer {creds.access_token}"},
+    ).json()
 ```
+
+The gateway sends these headers (no tool parameters needed):
+
+```
+X-Mewcp-Access-Token: ya29...
+X-Mewcp-Api-Key: sk-...
+X-Mewcp-Scopes: read,write
+X-Mewcp-Extra: {"tenant_id":"..."}
+X-Mewcp-Expires-At: 2026-05-04T12:00:00Z
+```
+
+Tools access credentials identically to env-based mode via `get_credentials()`.
 
 ---
 
-## MongoDB backend
+## Extra credential fields
 
-`MongoDBCredentialBackend` stores credentials in MongoDB with AES-256-GCM encryption at rest. Use this for multi-user or production deployments where credentials must be stored server-side.
+Some providers require more than the standard fields — a key + secret, a tenant ID alongside an OAuth token, etc. Extra fields work with **both** `static` and `oauth` types via `{PREFIX}EXTRA_{NAME}` env vars and are collected into `cred.extra`:
 
 ```bash
-pip install 'fastmcp-credentials[hosted]'
+# Static auth with extras
+export MYSERVICE_API_KEY=pk-live-abc123
+export MYSERVICE_EXTRA_API_SECRET=sk-live-xyz789
+export MYSERVICE_EXTRA_ACCOUNT_ID=acct_42
+
+# OAuth with extras
+export MYSERVICE_CRED_TYPE=oauth
+export MYSERVICE_ACCESS_TOKEN=ya29...
+export MYSERVICE_EXTRA_TENANT_ID=tenant-xyz
 ```
 
 ```python
-import os
-from fastmcp_credentials import CredentialMiddleware, MongoDBCredentialBackend
-
-backend = MongoDBCredentialBackend(
-    db_url=os.environ["DB_URL"],
-    # db_name defaults to CRED_DB_NAME env var, then "credentials"
-    # encryption_key defaults to CRED_ENCRYPTION_KEY env var
-)
-mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+@mcp.tool()
+def create_charge(amount: int) -> dict:
+    creds = get_credentials()
+    return client.charge(
+        api_key=creds.api_key,
+        secret=creds.extra["api_secret"],
+        account=creds.extra["account_id"],
+        amount=amount,
+    )
 ```
 
-Generate an encryption key:
-
-```bash
-python -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
-```
-
-Provider-specific fields that don't map to standard OAuth names can be stored in the document's `encrypted_extra` object (a JSON blob encrypted as a single unit) and are surfaced in `cred.extra`.
+Or for gateway-injected mode, the gateway includes them in `X-Mewcp-Extra`.
 
 ---
 
@@ -228,38 +196,28 @@ All variables use the prefix you set in `EnvCredentialBackend(prefix="...")`.
 
 ---
 
-## Implementing a custom backend
+## Header reference (gateway-injected mode)
 
-Implement `CredentialBackend` to pull credentials from any source — AWS Secrets Manager, HashiCorp Vault, a database, or your own API:
+When using `HeaderCredentialBackend`, the gateway sends these headers:
 
-```python
-from fastmcp_credentials import CredentialBackend, ResolvedCredential, CredentialNotFoundError
+| Header | Description |
+|---|---|
+| `X-Mewcp-Access-Token` | OAuth access token |
+| `X-Mewcp-Api-Key` | Static API key / PAT |
+| `X-Mewcp-Scopes` | Scopes (space-separated or JSON array) |
+| `X-Mewcp-Extra` | Extra fields (JSON object or base64-encoded JSON) |
+| `X-Mewcp-Expires-At` | Token expiry (ISO 8601 UTC timestamp) |
 
-class MyCustomBackend(CredentialBackend):
-    async def resolve(self, credential_id: str) -> ResolvedCredential:
-        data = await my_secrets_client.get(credential_id)
-        if not data:
-            raise CredentialNotFoundError(credential_id)
-        return ResolvedCredential(
-            type="static",
-            api_key=data["api_key"],
-            extra=data.get("extra", {}),
-        )
-
-backend = MyCustomBackend()
-mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend)])
-```
+At least one of `X-Mewcp-Access-Token` or `X-Mewcp-Api-Key` must be present.
 
 ---
 
 ## Backends summary
 
-| Backend | Best for |
-|---|---|
-| `EnvCredentialBackend` | Local dev, self-hosted single-user servers |
-| `FileCredentialBackend` | Local dev with multiple credentials in a JSON file |
-| `MongoDBCredentialBackend` | Multi-user / production — encrypted storage in MongoDB |
-| Custom `CredentialBackend` | Any other secret store: Vault, AWS Secrets Manager, etc. |
+| Backend | Mode | Best for |
+|---|---|---|
+| `EnvCredentialBackend` | Self-hosted | Local dev, single-user servers, env var config |
+| `HeaderCredentialBackend` | Hosted | Gateway-injected credentials, multi-user deployments |
 
 ---
 
@@ -283,7 +241,7 @@ Run a specific file or test:
 
 ```bash
 python -m pytest tests/backends/test_env.py
-python -m pytest tests/backends/test_mongodb.py::test_encrypt_decrypt_roundtrip
+python -m pytest tests/backends/test_headers.py::test_parse_scopes
 ```
 
 Run with verbose output:
@@ -291,10 +249,6 @@ Run with verbose output:
 ```bash
 python -m pytest -v
 ```
-
-If you prefer to call `pytest` directly, make sure the environment that has it installed is activated first.
-
-The suite is fully self-contained — no running MongoDB or external services required. The MongoDB backend tests mock the database and HTTP calls.
 
 ---
 

@@ -16,14 +16,13 @@ def get_credentials() -> ResolvedCredential:
             service = build_drive_service(creds)
             ...
 
-    Raises CredentialError if called outside a tool context or when no
-    X-Credential-ID header was present in the request.
+    Raises CredentialError if called outside a tool context or when credential
+    resolution fails in the middleware.
     """
     creds = _current_credential.get()
     if creds is None:
         raise CredentialError(
             "No credential has been resolved for this request. "
-            "Ensure CredentialMiddleware is registered on your FastMCP server "
-            "and that the request includes the X-Credential-ID header."
+            "Ensure CredentialMiddleware is registered on your FastMCP server."
         )
     return creds

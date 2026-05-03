@@ -35,12 +35,10 @@ class HeaderCredentialBackend(CredentialBackend):
         X-Mewcp-Extra       — JSON object or base64-encoded JSON with provider-specific fields
         X-Mewcp-Expires-At  — ISO 8601 UTC expiration timestamp
 
-    The credential_id argument is ignored — headers are the sole authority.
-
     Raises MissingCredentialHeaderError if neither token header is present.
     """
 
-    async def resolve(self) -> ResolvedCredential:  # noqa: ARG002
+    async def resolve(self) -> ResolvedCredential:
         request = get_http_request()
         if request is None:
             raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN, _HEADER_API_KEY])

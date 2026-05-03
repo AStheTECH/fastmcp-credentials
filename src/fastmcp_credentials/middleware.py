@@ -4,10 +4,8 @@ from contextvars import ContextVar
 from typing import Any
 
 from fastmcp.server.middleware import Middleware, MiddlewareContext
-from fastmcp.server.dependencies import get_http_request
 
 from .backends.base import CredentialBackend
-from .backends.headers import HeaderCredentialBackend
 from .types import ResolvedCredential
 
 logger = logging.getLogger(__name__)
@@ -23,8 +21,7 @@ class CredentialMiddleware(Middleware):
     """
     FastMCP middleware that resolves credentials before every tool call.
 
-    Reads the credential ID from an HTTP header (default: ``X-Credential-ID``),
-    resolves it via the configured backend, and stores the result in a
+    Resolves credentials via the configured backend and stores the result in a
     ``ContextVar`` scoped to the current tool invocation. After the tool
     returns (or raises), the ``ContextVar`` is always reset in a ``finally``
     block so credentials never leak between concurrent requests.
@@ -38,57 +35,27 @@ class CredentialMiddleware(Middleware):
         backend = EnvCredentialBackend(prefix="MYSERVICE_")
         mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend)])
 
-    Example (MongoDB-backed, hosted deployments)::
+    Example (header-based, gateway-injected credentials)::
 
-        backend = MongoDBCredentialBackend(db_url=os.environ["DB_URL"])
+        backend = HeaderCredentialBackend()
         mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend)])
 
     Args:
-        backend: Any :class:`CredentialBackend` implementation.
-        header:  HTTP header name carrying the credential ID
-                 (default: ``"X-Credential-ID"``).
+        backend: Either :class:`EnvCredentialBackend` or :class:`HeaderCredentialBackend`.
     """
 
-    def __init__(
-        self,
-        backend: CredentialBackend,
-        header: str = "X-Credential-ID",
-    ) -> None:
+    def __init__(self, backend: CredentialBackend) -> None:
         self.backend = backend
-        self.header = header
 
     async def on_call_tool(self, context: MiddlewareContext, call_next: Any) -> Any:
-        request = get_http_request()
-        credential_id: str | None = request.headers.get(self.header) if request else None
-
-        # HeaderCredentialBackend doesn't need X-Credential-ID — it reads from request headers directly
-        if isinstance(self.backend, HeaderCredentialBackend):
-            logger.debug("Resolving credentials from request headers (HeaderCredentialBackend)")
-            try:
-                creds = await self.backend.resolve()
-                token = _current_credential.set(creds)
-                try:
-                    return await call_next(context)
-                finally:
-                    _current_credential.reset(token)
-            except Exception:
-                # If credential resolution fails, let the error propagate
-                raise
-
-        # For other backends, require X-Credential-ID header
-        if not credential_id:
-            logger.debug(
-                "No %s header present — proceeding without credential injection. "
-                "Calls to get_credentials() will raise CredentialError.",
-                self.header,
-            )
-            return await call_next(context)
-
-        logger.debug("Resolving credential_id=%r via %s", credential_id, type(self.backend).__name__)
-        creds = await self.backend.resolve(credential_id)
-
-        token = _current_credential.set(creds)
+        logger.debug("Resolving credentials via %s", type(self.backend).__name__)
         try:
-            return await call_next(context)
-        finally:
-            _current_credential.reset(token)
+            creds = await self.backend.resolve()
+            token = _current_credential.set(creds)
+            try:
+                return await call_next(context)
+            finally:
+                _current_credential.reset(token)
+        except Exception:
+            logger.error("Credential resolution failed", exc_info=True)
+            raise

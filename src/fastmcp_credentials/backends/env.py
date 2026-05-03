@@ -35,8 +35,6 @@ class EnvCredentialBackend(CredentialBackend):
         MYSERVICE_EXTRA_WORKSPACE=my-workspace
         # → cred.extra["account_id"], cred.extra["workspace"]
 
-    The `credential_id` argument is ignored — this backend always returns
-    the single identity configured via env vars.
     """
 
     def __init__(self, prefix: str = "") -> None:
@@ -54,7 +52,7 @@ class EnvCredentialBackend(CredentialBackend):
             if k.startswith(extra_prefix)
         }
 
-    async def resolve(self, credential_id: str) -> ResolvedCredential:  # noqa: ARG002
+    async def resolve(self) -> ResolvedCredential:
         p = self.prefix
         cred_type = (os.environ.get(f"{p}CRED_TYPE") or "static").lower()
         extra = self._collect_extra()
