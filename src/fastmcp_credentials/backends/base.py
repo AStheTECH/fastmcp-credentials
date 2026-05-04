@@ -7,8 +7,9 @@ class CredentialBackend(ABC):
     """
     Abstract interface for credential resolution.
 
-    Implement this to plug in any secret store:
-    environment variables, local files, MongoDB, AWS Secrets Manager, etc.
+    Implement this to plug in any credential source:
+    environment variables (``EnvCredentialBackend``) or gateway-injected HTTP headers
+    (``HeaderCredentialBackend``).
     """
 
     @abstractmethod
