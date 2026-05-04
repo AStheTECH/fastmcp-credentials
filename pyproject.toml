@@ -7,16 +7,31 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
+keywords = ["fastmcp", "mcp", "credentials", "middleware", "oauth", "security"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=3.2.4,<4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "mypy>=1.0.0",
+    "ruff>=0.4.0",
 ]
 
 [tool.pytest.ini_options]
@@ -33,3 +48,7 @@ packages = ["src/fastmcp_credentials"]
 [project.urls]
 Homepage = "https://github.com/AStheTECH/fastmcp-credentials"
 Issues = "https://github.com/AStheTECH/fastmcp-credentials/issues"
+Changelog = "https://github.com/AStheTECH/fastmcp-credentials/blob/main/CHANGELOG.md"
+
+[tool.mypy]
+strict = true

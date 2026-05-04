@@ -53,6 +53,9 @@ class EnvCredentialBackend(CredentialBackend):
         }
 
     async def resolve(self) -> ResolvedCredential:
+        # ``async def`` satisfies the CredentialBackend ABC contract shared with
+        # network-based backends. All reads here are synchronous os.environ
+        # lookups — effectively instant, no I/O — so awaiting is not needed.
         p = self.prefix
         cred_type = (os.environ.get(f"{p}CRED_TYPE") or "static").lower()
         extra = self._collect_extra()

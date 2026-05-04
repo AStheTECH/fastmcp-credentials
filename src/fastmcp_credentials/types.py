@@ -6,7 +6,14 @@ from typing import Literal
 
 @dataclass
 class ResolvedCredential:
-    """Fully resolved, decrypted credential ready for use in a tool."""
+    """Fully resolved, decrypted credential ready for use in a tool.
+
+    This is a plain mutable dataclass. Treat the instance as read-only after
+    it is returned by a backend — mutating it is not thread-safe and may affect
+    other code paths that hold a reference to the same object within the same
+    request. The ContextVar reset in ``CredentialMiddleware`` clears the
+    reference after each tool call, but in-flight mutations are not protected.
+    """
 
     type: Literal["static", "oauth"]
 

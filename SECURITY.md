@@ -26,11 +26,11 @@ fastmcp-credentials is designed around a single core guarantee: **credentials ne
 
 ### How it works
 
-1. The calling client passes a `X-Credential-ID` HTTP header containing only an opaque identifier — never the credential value itself.
-2. The middleware intercepts this header server-side before any tool or handler executes.
-3. The credential value is resolved from the configured backend (environment, file, database, etc.) entirely within the server process.
+1. Credentials are resolved from the configured backend — environment variables (`EnvCredentialBackend`) or gateway-injected HTTP headers (`HeaderCredentialBackend`) — entirely within the server process before any tool executes.
+2. In gateway deployments, the gateway decrypts and refreshes credentials, then injects them as `X-MCP-Cred-*` headers. The LLM never handles these headers.
+3. The middleware intercepts each tool call and resolves the credential from the backend.
 4. The resolved credential is stored in a **request-scoped `ContextVar`** — it is accessible only within the execution context of that specific request.
-5. The `ContextVar` is explicitly cleared after the request completes, regardless of success or failure.
+5. The `ContextVar` is explicitly cleared in a `finally` block after the request completes, regardless of success or failure.
 
 At no point does the credential value appear in the MCP message payload, tool arguments, or any structure visible to the LLM.
 
@@ -59,7 +59,7 @@ The following are **outside the scope** of this library's guarantees:
 
 ## Security Best Practices for Users
 
-- **Use a secure backend in production.** The `EnvBackend` and `FileBackend` are appropriate for development and testing. Production deployments should use a secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager).
+- **Use a secure backend in production.** The `EnvCredentialBackend` is appropriate for development and single-user self-hosted deployments. Production multi-user deployments should use a gateway with `HeaderCredentialBackend`, backed by a secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager).
 - **Rotate credentials regularly.** This library resolves credentials at request time; rotation does not require a restart.
 - **Do not log request contexts.** Ensure your logging configuration does not capture ContextVar contents or raw HTTP headers.
 - **Validate credential IDs.** If your backend performs lookups by ID, validate and sanitize the ID to prevent injection attacks.

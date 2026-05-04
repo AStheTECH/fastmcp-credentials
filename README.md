@@ -23,7 +23,7 @@ The LLM only ever sees your tool's business parameters. Auth is invisible to it 
 pip install fastmcp-credentials
 ```
 
-Requires Python 3.10+ and FastMCP.
+Requires Python 3.11+ and FastMCP 3.x.
 
 ---
 
@@ -261,7 +261,7 @@ If neither `X-MCP-Cred-Access-Token` nor `X-MCP-Cred-Api-Key` is present, a `Mis
 Clone the repo and install with the `dev` extras:
 
 ```bash
-git clone https://github.com/<your-org>/fastmcp-credentials.git
+git clone https://github.com/AStheTECH/fastmcp-credentials.git
 cd fastmcp-credentials
 pip install -e ".[dev]"
 ```
@@ -289,4 +289,4 @@ python -m pytest -v
 
 ## License
 
-MIT
+Apache-2.0

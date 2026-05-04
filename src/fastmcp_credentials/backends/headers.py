@@ -102,7 +102,7 @@ def _parse_extra(raw: str | None) -> dict:
     try:
         decoded = base64.b64decode(raw + "==").decode("utf-8")
         return json.loads(decoded)
-    except Exception:
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         logger.warning(
             "HeaderCredentialBackend: could not parse X-MCP-Cred-Extra, ignoring"
         )
