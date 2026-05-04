@@ -1,6 +1,5 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-import pytest
 from fastmcp_credentials.types import ResolvedCredential, CredentialError, CredentialNotFoundError
 
 
