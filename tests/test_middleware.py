@@ -1,6 +1,6 @@
 from __future__ import annotations
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from fastmcp_credentials.middleware import CredentialMiddleware, _current_credential
 from fastmcp_credentials.backends.base import CredentialBackend
@@ -11,160 +11,127 @@ from fastmcp_credentials.types import ResolvedCredential, CredentialError
 # Helpers
 # ---------------------------------------------------------------------------
 
-class _StaticBackend(CredentialBackend):
-    """Minimal backend that always returns the same credential."""
+class _StubBackend(CredentialBackend):
+    """Backend stub that returns a fixed credential or raises on demand."""
 
-    def __init__(self, cred: ResolvedCredential) -> None:
+    def __init__(self, cred: ResolvedCredential | None = None, raises: Exception | None = None):
         self._cred = cred
-        self.resolved_ids: list[str] = []
+        self._raises = raises
+        self.call_count = 0
 
-    async def resolve(self, credential_id: str) -> ResolvedCredential:
-        self.resolved_ids.append(credential_id)
+    async def resolve(self) -> ResolvedCredential:
+        self.call_count += 1
+        if self._raises:
+            raise self._raises
         return self._cred
 
 
-def _mock_request(credential_id: str | None = None, header: str = "X-Credential-ID"):
-    """Build a minimal mock Starlette Request with the given header value."""
-    headers: dict[str, str] = {}
-    if credential_id is not None:
-        headers[header] = credential_id
-    req = MagicMock()
-    req.headers.get = lambda h, default=None: headers.get(h, default)
-    return req
-
-
-def _make_middleware(cred: ResolvedCredential, header: str = "X-Credential-ID"):
-    backend = _StaticBackend(cred)
-    return CredentialMiddleware(backend, header=header), backend
+def _middleware(cred: ResolvedCredential | None = None, raises: Exception | None = None):
+    backend = _StubBackend(cred=cred, raises=raises)
+    return CredentialMiddleware(backend), backend
 
 
 # ---------------------------------------------------------------------------
-# Tests — header absent
+# Credential resolution and injection
 # ---------------------------------------------------------------------------
 
-async def test_no_header_skips_resolve_and_calls_next():
+async def test_backend_resolve_is_called_on_every_tool_call():
     cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, backend = _make_middleware(cred)
-    call_next = AsyncMock(return_value="result")
-
-    with patch("fastmcp_credentials.middleware.get_http_request", return_value=_mock_request()):
-        result = await middleware.on_call_tool(MagicMock(), call_next)
-
-    assert result == "result"
-    assert backend.resolved_ids == []
-    call_next.assert_called_once()
+    mw, backend = _middleware(cred)
+    await mw.on_call_tool(MagicMock(), AsyncMock())
+    await mw.on_call_tool(MagicMock(), AsyncMock())
+    assert backend.call_count == 2
 
 
-async def test_none_request_skips_resolve_and_calls_next():
-    """get_http_request() can return None outside an HTTP context."""
+async def test_credential_is_in_contextvar_during_call():
     cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, backend = _make_middleware(cred)
-    call_next = AsyncMock(return_value="ok")
-
-    with patch("fastmcp_credentials.middleware.get_http_request", return_value=None):
-        result = await middleware.on_call_tool(MagicMock(), call_next)
-
-    assert result == "ok"
-    assert backend.resolved_ids == []
-
-
-# ---------------------------------------------------------------------------
-# Tests — header present
-# ---------------------------------------------------------------------------
-
-async def test_header_present_resolves_correct_id():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, backend = _make_middleware(cred)
-
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_abc123")):
-        await middleware.on_call_tool(MagicMock(), AsyncMock())
-
-    assert backend.resolved_ids == ["cred_abc123"]
-
-
-async def test_header_present_injects_credential_into_contextvar():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, _ = _make_middleware(cred)
+    mw, _ = _middleware(cred)
     captured: dict = {}
 
     async def capturing_next(ctx):
         captured["cred"] = _current_credential.get()
 
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_abc")):
-        await middleware.on_call_tool(MagicMock(), capturing_next)
-
+    await mw.on_call_tool(MagicMock(), capturing_next)
     assert captured["cred"] is cred
 
 
-async def test_custom_header_name_is_read():
+async def test_call_next_return_value_is_propagated():
     cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, backend = _make_middleware(cred, header="X-My-Auth")
-    captured: dict = {}
-
-    async def capturing_next(ctx):
-        captured["cred"] = _current_credential.get()
-
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_xyz", header="X-My-Auth")):
-        await middleware.on_call_tool(MagicMock(), capturing_next)
-
-    assert backend.resolved_ids == ["cred_xyz"]
-    assert captured["cred"] is cred
+    mw, _ = _middleware(cred)
+    result = await mw.on_call_tool(MagicMock(), AsyncMock(return_value="tool-result"))
+    assert result == "tool-result"
 
 
 # ---------------------------------------------------------------------------
-# Tests — ContextVar lifecycle
+# ContextVar lifecycle
 # ---------------------------------------------------------------------------
 
-async def test_contextvar_is_none_before_call():
+async def test_contextvar_is_none_before_any_call():
     assert _current_credential.get() is None
 
 
 async def test_contextvar_reset_to_none_after_successful_call():
     cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, _ = _make_middleware(cred)
-
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_1")):
-        await middleware.on_call_tool(MagicMock(), AsyncMock(return_value=None))
-
+    mw, _ = _middleware(cred)
+    await mw.on_call_tool(MagicMock(), AsyncMock())
     assert _current_credential.get() is None
 
 
-async def test_contextvar_reset_to_none_even_when_tool_raises():
+async def test_contextvar_reset_to_none_when_tool_raises():
     cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, _ = _make_middleware(cred)
+    mw, _ = _middleware(cred)
 
     async def raising_next(ctx):
         raise RuntimeError("tool exploded")
 
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_1")):
-        with pytest.raises(RuntimeError, match="tool exploded"):
-            await middleware.on_call_tool(MagicMock(), raising_next)
+    with pytest.raises(RuntimeError, match="tool exploded"):
+        await mw.on_call_tool(MagicMock(), raising_next)
 
     assert _current_credential.get() is None
 
 
-async def test_contextvar_not_visible_outside_tool_scope():
-    """Credential set during a call must not bleed into subsequent calls without a header."""
-    cred = ResolvedCredential(type="static", api_key="sk-test")
-    middleware, _ = _make_middleware(cred)
+async def test_contextvar_not_set_when_backend_raises():
+    mw, _ = _middleware(raises=CredentialError("backend down"))
 
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request("cred_1")):
-        await middleware.on_call_tool(MagicMock(), AsyncMock())
+    with pytest.raises(CredentialError):
+        await mw.on_call_tool(MagicMock(), AsyncMock())
 
-    # Second call — no header → no credential injected
-    seen: dict = {}
+    assert _current_credential.get() is None
 
-    async def check_next(ctx):
-        seen["cred"] = _current_credential.get()
 
-    with patch("fastmcp_credentials.middleware.get_http_request",
-               return_value=_mock_request()):
-        await middleware.on_call_tool(MagicMock(), check_next)
+async def test_credential_does_not_leak_between_sequential_calls():
+    cred_a = ResolvedCredential(type="static", api_key="sk-a")
+    cred_b = ResolvedCredential(type="oauth", access_token="tok-b")
 
-    assert seen["cred"] is None
+    backend_a = _StubBackend(cred=cred_a)
+    backend_b = _StubBackend(cred=cred_b)
+    mw_a = CredentialMiddleware(backend_a)
+    mw_b = CredentialMiddleware(backend_b)
+
+    seen: list = []
+
+    async def capture(ctx):
+        seen.append(_current_credential.get())
+
+    await mw_a.on_call_tool(MagicMock(), capture)
+    await mw_b.on_call_tool(MagicMock(), capture)
+
+    assert seen[0] is cred_a
+    assert seen[1] is cred_b
+    assert _current_credential.get() is None
+
+
+# ---------------------------------------------------------------------------
+# Backend exception propagation
+# ---------------------------------------------------------------------------
+
+async def test_backend_exception_propagates():
+    mw, _ = _middleware(raises=CredentialError("vault unreachable"))
+    with pytest.raises(CredentialError, match="vault unreachable"):
+        await mw.on_call_tool(MagicMock(), AsyncMock())
+
+
+async def test_non_credential_backend_exception_also_propagates():
+    mw, _ = _middleware(raises=ValueError("unexpected"))
+    with pytest.raises(ValueError, match="unexpected"):
+        await mw.on_call_tool(MagicMock(), AsyncMock())

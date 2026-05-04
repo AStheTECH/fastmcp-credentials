@@ -31,9 +31,9 @@ class HeaderCredentialBackend(CredentialBackend):
         X-MCP-Cred-Api-Key       — Static API key / PAT
 
     Optional headers:
-        X-Mewcp-Scopes      — CSV ("read,write") or JSON array ("["read","write"]")
-        X-Mewcp-Extra       — JSON object or base64-encoded JSON with provider-specific fields
-        X-Mewcp-Expires-At  — ISO 8601 UTC expiration timestamp
+        X-MCP-Cred-Scopes      — CSV ("read,write") or JSON array ("["read","write"]")
+        X-MCP-Cred-Extra       — JSON object or base64-encoded JSON with provider-specific fields
+        X-MCP-Cred-Expires-At  — ISO 8601 UTC expiration timestamp
 
     Raises MissingCredentialHeaderError if neither token header is present.
     """
@@ -104,7 +104,7 @@ def _parse_extra(raw: str | None) -> dict:
         return json.loads(decoded)
     except Exception:
         logger.warning(
-            "HeaderCredentialBackend: could not parse X-Mewcp-Extra, ignoring"
+            "HeaderCredentialBackend: could not parse X-MCP-Cred-Extra, ignoring"
         )
         return {}
 
@@ -119,6 +119,6 @@ def _parse_expires_at(raw: str | None) -> datetime | None:
         return dt
     except ValueError:
         logger.warning(
-            "HeaderCredentialBackend: invalid X-Mewcp-Expires-At %r, ignoring", raw
+            "HeaderCredentialBackend: invalid X-MCP-Cred-Expires-At %r, ignoring", raw
         )
         return None

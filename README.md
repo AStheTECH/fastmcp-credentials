@@ -4,12 +4,14 @@ Secure credential injection middleware for [FastMCP](https://github.com/jlowin/f
 
 Keeps secrets completely out of the LLM — credentials are resolved server-side and injected into tools transparently. The AI agent never sees tokens, API keys, or client secrets.
 
+---
+
 ## How it works
 
-1. `CredentialMiddleware` intercepts tool calls and resolves credentials via the configured backend.
-2. Credentials are stored in a request-scoped `ContextVar` (no leaking between requests).
-3. Your tool calls `get_credentials()` — a plain sync function, no `await`, no `ctx` — to access them.
-4. After the tool returns, the `ContextVar` is reset.
+1. `CredentialMiddleware` intercepts every tool call and resolves credentials via the configured backend.
+2. Credentials are stored in a request-scoped `ContextVar` — they never leak between concurrent requests.
+3. Your tool calls `get_credentials()` — a plain synchronous function, no `await`, no `ctx` — to read them.
+4. After the tool returns (or raises), the `ContextVar` is always reset in a `finally` block.
 
 The LLM only ever sees your tool's business parameters. Auth is invisible to it by design.
 
@@ -21,17 +23,29 @@ The LLM only ever sees your tool's business parameters. Auth is invisible to it 
 pip install fastmcp-credentials
 ```
 
+Requires Python 3.10+ and FastMCP.
+
 ---
 
-## Quick start — Static API key (environment variables)
+## Backends
 
-The most common case: your service uses a single API key from environment variables.
+| Backend | Best for |
+|---|---|
+| `EnvCredentialBackend` | Local development, self-hosted single-user servers |
+| `HeaderCredentialBackend` | Gateway-managed multi-user deployments |
+
+---
+
+## Quick start — Static API key (env vars)
+
+The most common case: your service uses a single API key loaded from environment variables.
 
 ```bash
 export MYSERVICE_API_KEY=sk-abc123...
 ```
 
 ```python
+import requests
 from fastmcp import FastMCP
 from fastmcp_credentials import CredentialMiddleware, EnvCredentialBackend, get_credentials
 
@@ -51,9 +65,9 @@ def search(query: str) -> list:
 
 ---
 
-## Quick start — OAuth (environment variables)
+## Quick start — OAuth (env vars)
 
-For OAuth tokens, set `CRED_TYPE=oauth`:
+For OAuth tokens, set `{PREFIX}CRED_TYPE=oauth`:
 
 ```bash
 export MYSERVICE_CRED_TYPE=oauth
@@ -82,11 +96,12 @@ def list_items(folder_id: str) -> list:
 
 ---
 
-## Hosted mode — Gateway-injected credentials
+## Quick start — Gateway-injected credentials (hosted mode)
 
-For hosted deployments where a gateway injects resolved credentials as HTTP headers:
+For multi-user deployments where a gateway decrypts, refreshes, and injects credentials as HTTP headers before forwarding requests to your MCP server:
 
 ```python
+import requests
 from fastmcp import FastMCP
 from fastmcp_credentials import CredentialMiddleware, HeaderCredentialBackend, get_credentials
 
@@ -102,14 +117,14 @@ def call_api(resource_id: str) -> dict:
     ).json()
 ```
 
-The gateway sends these headers (no tool parameters needed):
+The gateway sends these headers — no tool parameters, no LLM involvement:
 
 ```
-X-Mewcp-Access-Token: ya29...
-X-Mewcp-Api-Key: sk-...
-X-Mewcp-Scopes: read,write
-X-Mewcp-Extra: {"tenant_id":"..."}
-X-Mewcp-Expires-At: 2026-05-04T12:00:00Z
+X-MCP-Cred-Access-Token: ya29...
+X-MCP-Cred-Api-Key: sk-...
+X-MCP-Cred-Scopes: read,write
+X-MCP-Cred-Extra: {"tenant_id": "..."}
+X-MCP-Cred-Expires-At: 2026-05-04T12:00:00Z
 ```
 
 Tools access credentials identically to env-based mode via `get_credentials()`.
@@ -118,7 +133,9 @@ Tools access credentials identically to env-based mode via `get_credentials()`.
 
 ## Extra credential fields
 
-Some providers require more than the standard fields — a key + secret, a tenant ID alongside an OAuth token, etc. Extra fields work with **both** `static` and `oauth` types via `{PREFIX}EXTRA_{NAME}` env vars and are collected into `cred.extra`:
+Some providers require more than the standard fields — a signing secret alongside an API key, a tenant ID alongside an OAuth token, etc. Extra fields work with **both** `static` and `oauth` types and are collected into `cred.extra`.
+
+**Env vars:** use the `{PREFIX}EXTRA_{NAME}` pattern.
 
 ```bash
 # Static auth with extras
@@ -144,13 +161,38 @@ def create_charge(amount: int) -> dict:
     )
 ```
 
-Or for gateway-injected mode, the gateway includes them in `X-Mewcp-Extra`.
+**Gateway mode:** the gateway encodes extras in the `X-MCP-Cred-Extra` header as a JSON object or base64-encoded JSON.
+
+---
+
+## Selecting a backend based on deployment mode
+
+If you need to switch backends at runtime (e.g. env vars locally, header-injected in production), use the `get_mode()` helper which reads the `FASTMCP_CREDENTIAL_MODE` environment variable:
+
+```python
+from fastmcp_credentials import CredentialMiddleware, EnvCredentialBackend, HeaderCredentialBackend, get_mode, CredentialMode
+
+if get_mode() == CredentialMode.HOSTED:
+    backend = HeaderCredentialBackend()
+else:
+    backend = EnvCredentialBackend(prefix="MYSERVICE_")
+
+mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+```
+
+```bash
+# Local / self-hosted (default — no env var needed)
+# FASTMCP_CREDENTIAL_MODE=oss
+
+# Production behind a gateway
+export FASTMCP_CREDENTIAL_MODE=hosted
+```
 
 ---
 
 ## The `ResolvedCredential` object
 
-`get_credentials()` returns a `ResolvedCredential` dataclass:
+`get_credentials()` always returns a `ResolvedCredential` dataclass, regardless of which backend is used:
 
 ```python
 @dataclass
@@ -175,11 +217,13 @@ class ResolvedCredential:
     def is_expired(self) -> bool: ...
 ```
 
+`is_expired()` returns `True` if the access token has expired or expires within the next 60 seconds.
+
 ---
 
 ## Environment variable reference
 
-All variables use the prefix you set in `EnvCredentialBackend(prefix="...")`.
+All variables use the prefix you pass to `EnvCredentialBackend(prefix="...")`.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -192,32 +236,23 @@ All variables use the prefix you set in `EnvCredentialBackend(prefix="...")`.
 | `{PREFIX}CLIENT_SECRET` | — | OAuth client secret |
 | `{PREFIX}TOKEN_URI` | — | Token refresh endpoint URL |
 | `{PREFIX}SCOPES` | — | Comma-separated OAuth scopes |
-| `{PREFIX}EXPIRES_AT` | — | ISO 8601 token expiry (e.g. `2026-04-24T12:00:00+00:00`) |
+| `{PREFIX}EXPIRES_AT` | — | ISO 8601 token expiry (e.g. `2026-05-04T12:00:00+00:00`) |
 
 ---
 
 ## Header reference (gateway-injected mode)
 
-When using `HeaderCredentialBackend`, the gateway sends these headers:
+When using `HeaderCredentialBackend`, the gateway injects these headers. At least one of the first two must be present.
 
-| Header | Description |
-|---|---|
-| `X-Mewcp-Access-Token` | OAuth access token |
-| `X-Mewcp-Api-Key` | Static API key / PAT |
-| `X-Mewcp-Scopes` | Scopes (space-separated or JSON array) |
-| `X-Mewcp-Extra` | Extra fields (JSON object or base64-encoded JSON) |
-| `X-Mewcp-Expires-At` | Token expiry (ISO 8601 UTC timestamp) |
-
-At least one of `X-Mewcp-Access-Token` or `X-Mewcp-Api-Key` must be present.
-
----
-
-## Backends summary
-
-| Backend | Mode | Best for |
+| Header | Required | Description |
 |---|---|---|
-| `EnvCredentialBackend` | Self-hosted | Local dev, single-user servers, env var config |
-| `HeaderCredentialBackend` | Hosted | Gateway-injected credentials, multi-user deployments |
+| `X-MCP-Cred-Access-Token` | One of these | OAuth access token |
+| `X-MCP-Cred-Api-Key` | One of these | Static API key / PAT |
+| `X-MCP-Cred-Scopes` | No | Comma-separated string or JSON array of scopes |
+| `X-MCP-Cred-Extra` | No | JSON object or base64-encoded JSON with provider-specific fields |
+| `X-MCP-Cred-Expires-At` | No | Token expiry as ISO 8601 UTC timestamp |
+
+If neither `X-MCP-Cred-Access-Token` nor `X-MCP-Cred-Api-Key` is present, a `MissingCredentialHeaderError` is raised.
 
 ---
 
@@ -226,7 +261,7 @@ At least one of `X-Mewcp-Access-Token` or `X-Mewcp-Api-Key` must be present.
 Clone the repo and install with the `dev` extras:
 
 ```bash
-git clone https://github.com/your-org/fastmcp-credentials.git
+git clone https://github.com/<your-org>/fastmcp-credentials.git
 cd fastmcp-credentials
 pip install -e ".[dev]"
 ```

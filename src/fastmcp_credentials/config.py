@@ -10,16 +10,16 @@ class CredentialMode(Enum):
 
 def get_mode() -> CredentialMode:
     """
-    Read credential mode from MEWCP_CREDENTIAL_MODE env var.
+    Read credential mode from FASTMCP_CREDENTIAL_MODE env var.
 
     Defaults to "oss" so existing deployments are unaffected.
-    Set MEWCP_CREDENTIAL_MODE=hosted in production MCP servers running behind the gateway.
+    Set FASTMCP_CREDENTIAL_MODE=hosted in production MCP servers running behind the gateway.
     """
-    raw = os.environ.get("MEWCP_CREDENTIAL_MODE", "oss").strip().lower()
+    raw = os.environ.get("FASTMCP_CREDENTIAL_MODE", "oss").strip().lower()
     try:
         return CredentialMode(raw)
     except ValueError:
         raise ValueError(
-            f"Invalid MEWCP_CREDENTIAL_MODE={raw!r}. "
+            f"Invalid FASTMCP_CREDENTIAL_MODE={raw!r}. "
             f"Valid values: {[m.value for m in CredentialMode]}"
         )
