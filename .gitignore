@@ -36,14 +36,30 @@ coverage.xml
 .pyright/
 .ruff_cache/
 
-# IDEs
+# IDEs & editors
 .vscode/
 .idea/
 *.iml
+*.iws
+*.ipr
+.fleet/
+.zed/
+*.sublime-project
+*.sublime-workspace
+.cursor/
+
+# Claude Code
+.claude/
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
 # Hatch / build backends
 .hatch/
