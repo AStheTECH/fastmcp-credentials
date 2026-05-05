@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass
@@ -30,7 +30,7 @@ class ResolvedCredential:
     api_key: str | None = None
 
     # Escape hatch for provider-specific extras
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def is_expired(self) -> bool:
         """True if the access token has expired (or expires within 60 s)."""

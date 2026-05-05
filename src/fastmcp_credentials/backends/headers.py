@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Any, cast
 
 from fastmcp.server.dependencies import get_http_request
 
@@ -88,20 +89,20 @@ def _parse_scopes(raw: str | None) -> list[str] | None:
     return [s.strip() for s in raw.split(",") if s.strip()] or None
 
 
-def _parse_extra(raw: str | None) -> dict:
+def _parse_extra(raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
     raw = raw.strip()
     # Try plain JSON first
     if raw.startswith("{"):
         try:
-            return json.loads(raw)
+            return cast(dict[str, Any], json.loads(raw))
         except json.JSONDecodeError:
             pass
     # Try base64-encoded JSON
     try:
         decoded = base64.b64decode(raw + "==").decode("utf-8")
-        return json.loads(decoded)
+        return cast(dict[str, Any], json.loads(decoded))
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         logger.warning(
             "HeaderCredentialBackend: could not parse X-MCP-Cred-Extra, ignoring"

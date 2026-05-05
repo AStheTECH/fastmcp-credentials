@@ -43,7 +43,7 @@ class EnvCredentialBackend(CredentialBackend):
     def _get(self, key: str) -> str | None:
         return os.environ.get(f"{self.prefix}{key}")
 
-    def _collect_extra(self) -> dict:
+    def _collect_extra(self) -> dict[str, str]:
         """Collect all {PREFIX}EXTRA_{NAME} vars into a lowercased dict."""
         extra_prefix = f"{self.prefix}EXTRA_"
         return {
