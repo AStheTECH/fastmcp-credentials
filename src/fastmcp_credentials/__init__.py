@@ -11,14 +11,14 @@ OSS / local mode (env vars, no gateway):
     from fastmcp_credentials import CredentialMiddleware, EnvCredentialBackend, get_credentials
 
     backend = EnvCredentialBackend(prefix="MY_SERVICE_")
-    mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend)])
+    mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend, "static")])
 
 Hosted mode (gateway injects credentials as headers):
 
     from fastmcp_credentials import CredentialMiddleware, HeaderCredentialBackend, get_credentials
 
     backend = HeaderCredentialBackend()
-    mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend)])
+    mcp = FastMCP("My Server", middleware=[CredentialMiddleware(backend, "oauth")])
 
 In both modes, tools retrieve credentials identically:
 

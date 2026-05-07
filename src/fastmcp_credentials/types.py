@@ -26,10 +26,12 @@ class ResolvedCredential:
     scopes: list[str] | None = None
     expires_at: datetime | None = None
 
-    # Static (API key / PAT) fields
-    api_key: str | None = None
+    # Static credential fields — all provider fields by name (e.g. "keyId", "secretKey").
+    # Keys match the staticFields[].name values defined in the provider template.
+    fields: dict[str, str] = field(default_factory=dict)
 
-    # Escape hatch for provider-specific extras
+    # OAuth metadata — non-sensitive provider extras (e.g. Mailchimp DC, Slack workspace).
+    # Empty for static credentials.
     extra: dict[str, Any] = field(default_factory=dict)
 
     def is_expired(self) -> bool:

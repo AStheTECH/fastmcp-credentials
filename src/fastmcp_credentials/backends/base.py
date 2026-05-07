@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 from abc import ABC, abstractmethod
+from typing import Literal
 from ..types import ResolvedCredential
 
 
@@ -13,6 +14,6 @@ class CredentialBackend(ABC):
     """
 
     @abstractmethod
-    async def resolve(self) -> ResolvedCredential:
-        """Return fully resolved (decrypted) credentials."""
+    async def resolve(self, credential_type: Literal["static", "oauth"]) -> ResolvedCredential:
+        """Return fully resolved (decrypted) credentials for the declared auth type."""
         ...
