@@ -1,6 +1,6 @@
 [project]
 name = "fastmcp-credentials"
-version = "0.1.0"
+version = "0.1.1"
 description = "Credential injection middleware for FastMCP servers — keeps secrets out of the LLM"
 authors = [
   { name="AStheTECH", email="contact@asthetech.com" },
