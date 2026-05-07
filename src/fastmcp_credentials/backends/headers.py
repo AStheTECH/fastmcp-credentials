@@ -1,9 +1,8 @@
 from __future__ import annotations
-import base64
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastmcp.server.dependencies import get_http_request
 
@@ -13,7 +12,7 @@ from ..types import ResolvedCredential, MissingCredentialHeaderError
 logger = logging.getLogger(__name__)
 
 _HEADER_ACCESS_TOKEN = "X-MCP-Cred-Access-Token"
-_HEADER_API_KEY = "X-MCP-Cred-Api-Key"
+_HEADER_FIELDS = "X-MCP-Cred-Fields"
 _HEADER_SCOPES = "X-MCP-Cred-Scopes"
 _HEADER_EXTRA = "X-MCP-Cred-Extra"
 _HEADER_EXPIRES_AT = "X-MCP-Cred-Expires-At"
@@ -27,53 +26,67 @@ class HeaderCredentialBackend(CredentialBackend):
     The gateway decrypts, refreshes if needed, then injects only the resolved
     fields into outbound headers before forwarding the request to this MCP server.
 
-    Required headers (at least one must be present):
-        X-MCP-Cred-Access-Token  — OAuth access token
-        X-MCP-Cred-Api-Key       — Static API key / PAT
+    The credential type is declared by the developer in CredentialMiddleware, not
+    inferred from headers at runtime.
 
-    Optional headers:
-        X-MCP-Cred-Scopes      — CSV ("read,write") or JSON array ("["read","write"]")
-        X-MCP-Cred-Extra       — JSON object or base64-encoded JSON with provider-specific fields
-        X-MCP-Cred-Expires-At  — ISO 8601 UTC expiration timestamp
+    For ``credential_type="oauth"``:
+        X-MCP-Cred-Access-Token  — required; OAuth access token
+        X-MCP-Cred-Scopes        — optional; space-separated or JSON-array
+        X-MCP-Cred-Extra         — optional; JSON object of OAuth provider metadata
+        X-MCP-Cred-Expires-At    — optional; ISO 8601 UTC expiration timestamp
 
-    Raises MissingCredentialHeaderError if neither token header is present.
+    For ``credential_type="static"``:
+        X-MCP-Cred-Fields        — required; JSON object of all static fields
+                                   e.g. {"keyId":"rz_live_...","keySecret":"..."}
     """
 
-    async def resolve(self) -> ResolvedCredential:
+    async def resolve(self, credential_type: Literal["static", "oauth"]) -> ResolvedCredential:
         request = get_http_request()
-        if request is None:
-            raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN, _HEADER_API_KEY])
 
-        headers = request.headers
-
-        access_token = headers.get(_HEADER_ACCESS_TOKEN)
-        api_key = headers.get(_HEADER_API_KEY)
-
-        if not access_token and not api_key:
-            raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN, _HEADER_API_KEY])
-
-        scopes = _parse_scopes(headers.get(_HEADER_SCOPES))
-        extra = _parse_extra(headers.get(_HEADER_EXTRA))
-        expires_at = _parse_expires_at(headers.get(_HEADER_EXPIRES_AT))
-
-        if access_token:
-            logger.debug(
-                "HeaderCredentialBackend: resolved oauth credential from headers"
-            )
+        if credential_type == "static":
+            if request is None:
+                raise MissingCredentialHeaderError([_HEADER_FIELDS])
+            fields_raw = request.headers.get(_HEADER_FIELDS)
+            if not fields_raw:
+                raise MissingCredentialHeaderError([_HEADER_FIELDS])
+            logger.debug("HeaderCredentialBackend: resolved static credential from headers")
             return ResolvedCredential(
-                type="oauth",
-                access_token=access_token,
-                scopes=scopes,
-                expires_at=expires_at,
-                extra=extra,
+                type="static",
+                fields=_parse_fields(fields_raw),
             )
 
-        logger.debug("HeaderCredentialBackend: resolved static credential from headers")
+        # oauth
+        if request is None:
+            raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN])
+        headers = request.headers
+        access_token = headers.get(_HEADER_ACCESS_TOKEN)
+        if not access_token:
+            raise MissingCredentialHeaderError([_HEADER_ACCESS_TOKEN])
+        logger.debug("HeaderCredentialBackend: resolved oauth credential from headers")
         return ResolvedCredential(
-            type="static",
-            api_key=api_key,
-            extra=extra,
+            type="oauth",
+            access_token=access_token,
+            scopes=_parse_scopes(headers.get(_HEADER_SCOPES)),
+            expires_at=_parse_expires_at(headers.get(_HEADER_EXPIRES_AT)),
+            extra=_parse_json_header(_HEADER_EXTRA, headers.get(_HEADER_EXTRA)),
         )
+
+
+def _parse_fields(raw: str | None) -> dict[str, str]:
+    if not raw:
+        return {}
+    raw = raw.strip()
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return {str(k): str(v) for k, v in parsed.items()}
+    except json.JSONDecodeError:
+        pass
+    logger.warning(
+        "HeaderCredentialBackend: could not parse %s as JSON object, ignoring",
+        _HEADER_FIELDS,
+    )
+    return {}
 
 
 def _parse_scopes(raw: str | None) -> list[str] | None:
@@ -86,26 +99,19 @@ def _parse_scopes(raw: str | None) -> list[str] | None:
             return [s for s in parsed if s]
         except json.JSONDecodeError:
             pass
-    return [s.strip() for s in raw.split(",") if s.strip()] or None
+    return [s.strip() for s in raw.split(" ") if s.strip()] or None
 
 
-def _parse_extra(raw: str | None) -> dict[str, Any]:
+def _parse_json_header(name: str, raw: str | None) -> dict[str, Any]:
     if not raw:
         return {}
     raw = raw.strip()
-    # Try plain JSON first
-    if raw.startswith("{"):
-        try:
-            return cast(dict[str, Any], json.loads(raw))
-        except json.JSONDecodeError:
-            pass
-    # Try base64-encoded JSON
     try:
-        decoded = base64.b64decode(raw + "==").decode("utf-8")
-        return cast(dict[str, Any], json.loads(decoded))
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        parsed = json.loads(raw)
+        return cast(dict[str, Any], parsed)
+    except json.JSONDecodeError:
         logger.warning(
-            "HeaderCredentialBackend: could not parse X-MCP-Cred-Extra, ignoring"
+            "HeaderCredentialBackend: could not parse %s as JSON, ignoring", name
         )
         return {}
 
@@ -120,6 +126,6 @@ def _parse_expires_at(raw: str | None) -> datetime | None:
         return dt
     except ValueError:
         logger.warning(
-            "HeaderCredentialBackend: invalid X-MCP-Cred-Expires-At %r, ignoring", raw
+            "HeaderCredentialBackend: invalid %s %r, ignoring", _HEADER_EXPIRES_AT, raw
         )
         return None

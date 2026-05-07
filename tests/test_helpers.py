@@ -11,7 +11,7 @@ def test_raises_when_no_credential_in_context():
 
 
 def test_returns_credential_set_in_context():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     token = _current_credential.set(cred)
     try:
         assert get_credentials() is cred
@@ -20,7 +20,7 @@ def test_returns_credential_set_in_context():
 
 
 def test_multiple_calls_return_same_object():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     token = _current_credential.set(cred)
     try:
         assert get_credentials() is get_credentials()
@@ -29,7 +29,7 @@ def test_multiple_calls_return_same_object():
 
 
 def test_raises_again_after_context_is_reset():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     token = _current_credential.set(cred)
     _current_credential.reset(token)
     with pytest.raises(CredentialError):

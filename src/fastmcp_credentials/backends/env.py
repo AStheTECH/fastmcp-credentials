@@ -1,6 +1,8 @@
 from __future__ import annotations
+import json
 import os
 from datetime import datetime, timezone
+from typing import Literal
 from .base import CredentialBackend
 from ..types import ResolvedCredential, CredentialError
 
@@ -14,27 +16,29 @@ class EnvCredentialBackend(CredentialBackend):
 
         backend = EnvCredentialBackend(prefix="MYSERVICE_")
 
-    Then set env vars like:
+    The auth type is declared in code via CredentialMiddleware, not read from env vars.
 
-    For static auth — default:
-        MYSERVICE_API_KEY=sk-...
-        # MYSERVICE_CRED_TYPE=static  (this is the default, no need to set)
+    For static auth:
+        # Option 1 — JSON object (recommended for multi-field providers):
+        MYSERVICE_FIELDS={"keyId":"rz_live_...","keySecret":"..."}
+
+        # Option 2 — individual FIELD_<name> vars (useful when values come
+        # from a secrets manager that injects one env var per secret):
+        MYSERVICE_FIELD_keyId=rz_live_...
+        MYSERVICE_FIELD_keySecret=...
 
     For OAuth:
-        MYSERVICE_CRED_TYPE=oauth
         MYSERVICE_ACCESS_TOKEN=...
         MYSERVICE_REFRESH_TOKEN=...
         MYSERVICE_CLIENT_ID=...
         MYSERVICE_CLIENT_SECRET=...
         MYSERVICE_TOKEN_URI=https://auth.example.com/token
-        MYSERVICE_SCOPES=read,write
+        MYSERVICE_SCOPES=read write
 
-    For any auth type, provider-specific extra fields can be added with
-    the EXTRA_ prefix — they are collected into cred.extra:
-        MYSERVICE_EXTRA_ACCOUNT_ID=acct_42
+    OAuth provider metadata can be added with the EXTRA_ prefix:
+        MYSERVICE_EXTRA_DC=us10
         MYSERVICE_EXTRA_WORKSPACE=my-workspace
-        # → cred.extra["account_id"], cred.extra["workspace"]
-
+        # → cred.extra["dc"], cred.extra["workspace"]
     """
 
     def __init__(self, prefix: str = "") -> None:
@@ -43,8 +47,8 @@ class EnvCredentialBackend(CredentialBackend):
     def _get(self, key: str) -> str | None:
         return os.environ.get(f"{self.prefix}{key}")
 
-    def _collect_extra(self) -> dict[str, str]:
-        """Collect all {PREFIX}EXTRA_{NAME} vars into a lowercased dict."""
+    def _collect_oauth_extra(self) -> dict[str, str]:
+        """Collect {PREFIX}EXTRA_{NAME} vars into a lowercased dict (OAuth metadata)."""
         extra_prefix = f"{self.prefix}EXTRA_"
         return {
             k[len(extra_prefix):].lower(): v
@@ -52,23 +56,55 @@ class EnvCredentialBackend(CredentialBackend):
             if k.startswith(extra_prefix)
         }
 
-    async def resolve(self) -> ResolvedCredential:
-        # ``async def`` satisfies the CredentialBackend ABC contract shared with
-        # network-based backends. All reads here are synchronous os.environ
-        # lookups — effectively instant, no I/O — so awaiting is not needed.
+    def _collect_static_fields(self) -> dict[str, str]:
+        """
+        Collect static credential fields in priority order:
+        1. PREFIX_FIELDS (JSON object)
+        2. PREFIX_FIELD_<name> individual vars (key name preserved as-is)
+        """
         p = self.prefix
-        cred_type = (os.environ.get(f"{p}CRED_TYPE") or "static").lower()
-        extra = self._collect_extra()
 
-        if cred_type == "static":
-            api_key = os.environ.get(f"{p}API_KEY")
-            if not api_key:
-                raise CredentialError(f"Missing env var: {p}API_KEY")
-            return ResolvedCredential(type="static", api_key=api_key, extra=extra)
+        # 1. JSON blob
+        fields_json = os.environ.get(f"{p}FIELDS")
+        if fields_json:
+            try:
+                parsed = json.loads(fields_json)
+                if isinstance(parsed, dict):
+                    return {str(k): str(v) for k, v in parsed.items()}
+            except json.JSONDecodeError:
+                raise CredentialError(
+                    f"Invalid JSON in {p}FIELDS. "
+                    "Value must be a JSON object, e.g. "
+                    '\'{"keyId":"...","keySecret":"..."}\'.'
+                )
+
+        # 2. Individual FIELD_* vars
+        field_prefix = f"{p}FIELD_"
+        individual = {
+            k[len(field_prefix):]: v
+            for k, v in os.environ.items()
+            if k.startswith(field_prefix)
+        }
+        if individual:
+            return individual
+
+        return {}
+
+    async def resolve(self, credential_type: Literal["static", "oauth"]) -> ResolvedCredential:
+        p = self.prefix
+
+        if credential_type == "static":
+            fields = self._collect_static_fields()
+            if not fields:
+                raise CredentialError(
+                    f"No static credentials found. "
+                    f"Set {p}FIELDS (JSON object) or individual {p}FIELD_<name> env vars."
+                )
+            return ResolvedCredential(type="static", fields=fields)
 
         # OAuth
         scopes_raw = os.environ.get(f"{p}SCOPES", "")
-        scopes = [s.strip() for s in scopes_raw.split(",") if s.strip()] or None
+        scopes = [s.strip() for s in scopes_raw.split() if s.strip()] or None
 
         expires_at: datetime | None = None
         if raw := os.environ.get(f"{p}EXPIRES_AT"):
@@ -85,5 +121,5 @@ class EnvCredentialBackend(CredentialBackend):
             token_uri=os.environ.get(f"{p}TOKEN_URI"),
             scopes=scopes,
             expires_at=expires_at,
-            extra=extra,
+            extra=self._collect_oauth_extra(),
         )

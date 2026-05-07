@@ -36,12 +36,17 @@ Requires Python 3.11+ and FastMCP 3.x.
 
 ---
 
-## Quick start — Static API key (env vars)
+## Quick start — Static credentials (env vars)
 
-The most common case: your service uses a single API key loaded from environment variables.
+Static credentials are arbitrary key/value fields loaded from environment variables. All fields are available on `cred.fields`.
 
 ```bash
-export MYSERVICE_API_KEY=sk-abc123...
+# Option 1 — JSON object (recommended for multi-field providers):
+export MYSERVICE_FIELDS='{"apiKey":"sk-abc123","secretKey":"xyz789"}'
+
+# Option 2 — individual FIELD_<name> vars (useful with secrets managers):
+export MYSERVICE_FIELD_apiKey=sk-abc123
+export MYSERVICE_FIELD_secretKey=xyz789
 ```
 
 ```python
@@ -50,14 +55,14 @@ from fastmcp import FastMCP
 from fastmcp_credentials import CredentialMiddleware, EnvCredentialBackend, get_credentials
 
 backend = EnvCredentialBackend(prefix="MYSERVICE_")
-mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend, "static")])
 
 @mcp.tool()
 def search(query: str) -> list:
     creds = get_credentials()
     response = requests.get(
         "https://api.myservice.com/search",
-        headers={"Authorization": f"Bearer {creds.api_key}"},
+        headers={"Authorization": f"Bearer {creds.fields['apiKey']}"},
         params={"q": query},
     )
     return response.json()
@@ -76,12 +81,12 @@ export MYSERVICE_REFRESH_TOKEN=1//...
 export MYSERVICE_CLIENT_ID=your_client_id
 export MYSERVICE_CLIENT_SECRET=your_client_secret
 export MYSERVICE_TOKEN_URI=https://auth.myservice.com/token
-export MYSERVICE_SCOPES=read,write
+export MYSERVICE_SCOPES=read write
 ```
 
 ```python
 backend = EnvCredentialBackend(prefix="MYSERVICE_")
-mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend, "oauth")])
 
 @mcp.tool()
 def list_items(folder_id: str) -> list:
@@ -106,7 +111,7 @@ from fastmcp import FastMCP
 from fastmcp_credentials import CredentialMiddleware, HeaderCredentialBackend, get_credentials
 
 backend = HeaderCredentialBackend()
-mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend, "oauth")])
 
 @mcp.tool()
 def call_api(resource_id: str) -> dict:
@@ -121,8 +126,8 @@ The gateway sends these headers — no tool parameters, no LLM involvement:
 
 ```
 X-MCP-Cred-Access-Token: ya29...
-X-MCP-Cred-Api-Key: sk-...
-X-MCP-Cred-Scopes: read,write
+X-MCP-Cred-Fields: {"apiKey":"sk-...","secretKey":"..."}
+X-MCP-Cred-Scopes: read write
 X-MCP-Cred-Extra: {"tenant_id": "..."}
 X-MCP-Cred-Expires-At: 2026-05-04T12:00:00Z
 ```
@@ -131,37 +136,28 @@ Tools access credentials identically to env-based mode via `get_credentials()`.
 
 ---
 
-## Extra credential fields
+## OAuth extras
 
-Some providers require more than the standard fields — a signing secret alongside an API key, a tenant ID alongside an OAuth token, etc. Extra fields work with **both** `static` and `oauth` types and are collected into `cred.extra`.
+Some OAuth providers include non-sensitive metadata alongside the token — a data-centre region, a workspace identifier, etc. These are collected into `cred.extra` for OAuth credentials only.
 
 **Env vars:** use the `{PREFIX}EXTRA_{NAME}` pattern.
 
 ```bash
-# Static auth with extras
-export MYSERVICE_API_KEY=pk-live-abc123
-export MYSERVICE_EXTRA_API_SECRET=sk-live-xyz789
-export MYSERVICE_EXTRA_ACCOUNT_ID=acct_42
-
-# OAuth with extras
 export MYSERVICE_CRED_TYPE=oauth
 export MYSERVICE_ACCESS_TOKEN=ya29...
-export MYSERVICE_EXTRA_TENANT_ID=tenant-xyz
+export MYSERVICE_EXTRA_DC=us10
+export MYSERVICE_EXTRA_WORKSPACE=my-workspace
 ```
 
 ```python
 @mcp.tool()
-def create_charge(amount: int) -> dict:
+def call_api() -> dict:
     creds = get_credentials()
-    return client.charge(
-        api_key=creds.api_key,
-        secret=creds.extra["api_secret"],
-        account=creds.extra["account_id"],
-        amount=amount,
-    )
+    base_url = f"https://{creds.extra['dc']}.api.example.com"
+    return requests.get(base_url, headers={"Authorization": f"Bearer {creds.access_token}"}).json()
 ```
 
-**Gateway mode:** the gateway encodes extras in the `X-MCP-Cred-Extra` header as a JSON object or base64-encoded JSON.
+**Gateway mode:** the gateway encodes extras in the `X-MCP-Cred-Extra` header as a JSON object.
 
 ---
 
@@ -177,7 +173,7 @@ if get_mode() == CredentialMode.HOSTED:
 else:
     backend = EnvCredentialBackend(prefix="MYSERVICE_")
 
-mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend)])
+mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend, "oauth")])
 ```
 
 ```bash
@@ -199,8 +195,8 @@ export FASTMCP_CREDENTIAL_MODE=hosted
 class ResolvedCredential:
     type: Literal["static", "oauth"]
 
-    # Static auth
-    api_key: str | None
+    # Static auth — all provider fields by name
+    fields: dict[str, str]
 
     # OAuth
     access_token: str | None
@@ -211,8 +207,8 @@ class ResolvedCredential:
     scopes: list[str] | None
     expires_at: datetime | None
 
-    # Provider-specific extras (populated by any backend)
-    extra: dict
+    # OAuth metadata only (e.g. dc, workspace). Empty for static credentials.
+    extra: dict[str, Any]
 
     def is_expired(self) -> bool: ...
 ```
@@ -227,16 +223,18 @@ All variables use the prefix you pass to `EnvCredentialBackend(prefix="...")`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `{PREFIX}CRED_TYPE` | `static` | `static` for API keys, `oauth` for OAuth tokens |
-| `{PREFIX}API_KEY` | — | Primary API key (used when `CRED_TYPE=static`) |
-| `{PREFIX}EXTRA_{NAME}` | — | Extra fields for any auth type → `cred.extra["name"]` |
+| `{PREFIX}FIELDS` | — | JSON object with all static fields, e.g. `{"apiKey":"...","secretKey":"..."}` |
+| `{PREFIX}FIELD_{NAME}` | — | Individual static field (key name preserved as-is) → `cred.fields["NAME"]` |
+| `{PREFIX}EXTRA_{NAME}` | — | OAuth metadata only → `cred.extra["name"]` |
 | `{PREFIX}ACCESS_TOKEN` | — | OAuth access token |
 | `{PREFIX}REFRESH_TOKEN` | — | OAuth refresh token |
 | `{PREFIX}CLIENT_ID` | — | OAuth client identifier |
 | `{PREFIX}CLIENT_SECRET` | — | OAuth client secret |
 | `{PREFIX}TOKEN_URI` | — | Token refresh endpoint URL |
-| `{PREFIX}SCOPES` | — | Comma-separated OAuth scopes |
+| `{PREFIX}SCOPES` | — | Space-separated OAuth scopes |
 | `{PREFIX}EXPIRES_AT` | — | ISO 8601 token expiry (e.g. `2026-05-04T12:00:00+00:00`) |
+
+`{PREFIX}FIELDS` takes priority over individual `{PREFIX}FIELD_{NAME}` vars when both are set.
 
 ---
 
@@ -247,12 +245,12 @@ When using `HeaderCredentialBackend`, the gateway injects these headers. At leas
 | Header | Required | Description |
 |---|---|---|
 | `X-MCP-Cred-Access-Token` | One of these | OAuth access token |
-| `X-MCP-Cred-Api-Key` | One of these | Static API key / PAT |
-| `X-MCP-Cred-Scopes` | No | Comma-separated string or JSON array of scopes |
-| `X-MCP-Cred-Extra` | No | JSON object or base64-encoded JSON with provider-specific fields |
+| `X-MCP-Cred-Fields` | One of these | JSON object with all static credential fields |
+| `X-MCP-Cred-Scopes` | No | Space-separated string of OAuth scopes |
+| `X-MCP-Cred-Extra` | No | JSON object with OAuth provider metadata |
 | `X-MCP-Cred-Expires-At` | No | Token expiry as ISO 8601 UTC timestamp |
 
-If neither `X-MCP-Cred-Access-Token` nor `X-MCP-Cred-Api-Key` is present, a `MissingCredentialHeaderError` is raised.
+If neither `X-MCP-Cred-Access-Token` nor `X-MCP-Cred-Fields` is present, a `MissingCredentialHeaderError` is raised.
 
 ---
 

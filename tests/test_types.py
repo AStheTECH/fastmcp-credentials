@@ -74,7 +74,16 @@ class TestResolvedCredential:
         assert cred.token_uri is None
         assert cred.scopes is None
         assert cred.expires_at is None
-        assert cred.api_key is None
+        assert cred.fields == {}
+
+    def test_fields_defaults_to_empty_dict(self):
+        assert ResolvedCredential(type="static").fields == {}
+
+    def test_fields_dict_is_not_shared_between_instances(self):
+        a = ResolvedCredential(type="static")
+        b = ResolvedCredential(type="static")
+        a.fields["key"] = "val"
+        assert "key" not in b.fields
 
     def test_extra_dict_is_not_shared_between_instances(self):
         a = ResolvedCredential(type="static")

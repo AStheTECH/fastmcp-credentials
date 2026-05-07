@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pytest
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
 from fastmcp_credentials.middleware import CredentialMiddleware, _current_credential
@@ -19,16 +20,20 @@ class _StubBackend(CredentialBackend):
         self._raises = raises
         self.call_count = 0
 
-    async def resolve(self) -> ResolvedCredential:
+    async def resolve(self, credential_type: Literal["static", "oauth"]) -> ResolvedCredential:
         self.call_count += 1
         if self._raises:
             raise self._raises
         return self._cred
 
 
-def _middleware(cred: ResolvedCredential | None = None, raises: Exception | None = None):
+def _middleware(
+    cred: ResolvedCredential | None = None,
+    raises: Exception | None = None,
+    credential_type: Literal["static", "oauth"] = "static",
+):
     backend = _StubBackend(cred=cred, raises=raises)
-    return CredentialMiddleware(backend), backend
+    return CredentialMiddleware(backend, credential_type), backend
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +41,7 @@ def _middleware(cred: ResolvedCredential | None = None, raises: Exception | None
 # ---------------------------------------------------------------------------
 
 async def test_backend_resolve_is_called_on_every_tool_call():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     mw, backend = _middleware(cred)
     await mw.on_call_tool(MagicMock(), AsyncMock())
     await mw.on_call_tool(MagicMock(), AsyncMock())
@@ -44,7 +49,7 @@ async def test_backend_resolve_is_called_on_every_tool_call():
 
 
 async def test_credential_is_in_contextvar_during_call():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     mw, _ = _middleware(cred)
     captured: dict = {}
 
@@ -56,10 +61,25 @@ async def test_credential_is_in_contextvar_during_call():
 
 
 async def test_call_next_return_value_is_propagated():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     mw, _ = _middleware(cred)
     result = await mw.on_call_tool(MagicMock(), AsyncMock(return_value="tool-result"))
     assert result == "tool-result"
+
+
+async def test_credential_type_passed_to_backend():
+    backend = _StubBackend(cred=ResolvedCredential(type="oauth", access_token="tok"))
+    mw = CredentialMiddleware(backend, "oauth")
+    received_types: list = []
+
+    original_resolve = backend.resolve
+    async def capturing_resolve(credential_type):
+        received_types.append(credential_type)
+        return await original_resolve(credential_type)
+    backend.resolve = capturing_resolve
+
+    await mw.on_call_tool(MagicMock(), AsyncMock())
+    assert received_types == ["oauth"]
 
 
 # ---------------------------------------------------------------------------
@@ -71,14 +91,14 @@ async def test_contextvar_is_none_before_any_call():
 
 
 async def test_contextvar_reset_to_none_after_successful_call():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     mw, _ = _middleware(cred)
     await mw.on_call_tool(MagicMock(), AsyncMock())
     assert _current_credential.get() is None
 
 
 async def test_contextvar_reset_to_none_when_tool_raises():
-    cred = ResolvedCredential(type="static", api_key="sk-test")
+    cred = ResolvedCredential(type="static", fields={"apiKey": "sk-test"})
     mw, _ = _middleware(cred)
 
     async def raising_next(ctx):
@@ -100,13 +120,13 @@ async def test_contextvar_not_set_when_backend_raises():
 
 
 async def test_credential_does_not_leak_between_sequential_calls():
-    cred_a = ResolvedCredential(type="static", api_key="sk-a")
+    cred_a = ResolvedCredential(type="static", fields={"apiKey": "sk-a"})
     cred_b = ResolvedCredential(type="oauth", access_token="tok-b")
 
     backend_a = _StubBackend(cred=cred_a)
     backend_b = _StubBackend(cred=cred_b)
-    mw_a = CredentialMiddleware(backend_a)
-    mw_b = CredentialMiddleware(backend_b)
+    mw_a = CredentialMiddleware(backend_a, "static")
+    mw_b = CredentialMiddleware(backend_b, "oauth")
 
     seen: list = []
 
