@@ -75,7 +75,6 @@ def search(query: str) -> list:
 For OAuth tokens, set `{PREFIX}CRED_TYPE=oauth`:
 
 ```bash
-export MYSERVICE_CRED_TYPE=oauth
 export MYSERVICE_ACCESS_TOKEN=ya29...
 export MYSERVICE_REFRESH_TOKEN=1//...
 export MYSERVICE_CLIENT_ID=your_client_id
@@ -242,15 +241,15 @@ All variables use the prefix you pass to `EnvCredentialBackend(prefix="...")`.
 
 When using `HeaderCredentialBackend`, the gateway injects these headers. At least one of the first two must be present.
 
-| Header | Required | Description |
+| Header | Required for | Description |
 |---|---|---|
-| `X-MCP-Cred-Access-Token` | One of these | OAuth access token |
-| `X-MCP-Cred-Fields` | One of these | JSON object with all static credential fields |
+| `X-MCP-Cred-Access-Token` | `"oauth"` type | OAuth access token |
+| `X-MCP-Cred-Fields` | `"static"` type | JSON object with all static credential fields |
 | `X-MCP-Cred-Scopes` | No | Space-separated string of OAuth scopes |
 | `X-MCP-Cred-Extra` | No | JSON object with OAuth provider metadata |
 | `X-MCP-Cred-Expires-At` | No | Token expiry as ISO 8601 UTC timestamp |
 
-If neither `X-MCP-Cred-Access-Token` nor `X-MCP-Cred-Fields` is present, a `MissingCredentialHeaderError` is raised.
+The required header depends on the credential type configured in `CredentialMiddleware`. If the type-appropriate header is missing, a `MissingCredentialHeaderError` is raised.
 
 ---
 
