@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
+
 from .middleware import _current_credential
-from .types import ResolvedCredential, CredentialError
+from .types import CredentialError, ResolvedCredential
 
 
 def get_credentials() -> ResolvedCredential:

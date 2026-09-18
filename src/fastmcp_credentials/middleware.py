@@ -1,4 +1,5 @@
 ﻿from __future__ import annotations
+
 import logging
 from contextvars import ContextVar
 from typing import Any, Literal
@@ -68,5 +69,5 @@ class CredentialMiddleware(Middleware):
             finally:
                 _current_credential.reset(token)
         except Exception:
-            logger.error("Credential resolution failed", exc_info=True)
+            logger.exception("Credential resolution failed")
             raise
