@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import pytest
+
 from fastmcp_credentials.helpers import get_credentials
 from fastmcp_credentials.middleware import _current_credential
-from fastmcp_credentials.types import ResolvedCredential, CredentialError
+from fastmcp_credentials.types import CredentialError, ResolvedCredential
 
 
 def test_raises_when_no_credential_in_context():

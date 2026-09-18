@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import json
+from datetime import UTC
+
 import pytest
-from datetime import timezone
+
 from fastmcp_credentials.backends.env import EnvCredentialBackend
 from fastmcp_credentials.types import CredentialError
 
@@ -131,7 +134,7 @@ async def test_oauth_expires_at_parsed_with_timezone(monkeypatch):
 async def test_oauth_naive_expires_at_normalized_to_utc(monkeypatch):
     monkeypatch.setenv(f"{PREFIX}EXPIRES_AT", "2026-04-24T12:00:00")
     cred = await EnvCredentialBackend(prefix=PREFIX).resolve("oauth")
-    assert cred.expires_at.tzinfo == timezone.utc
+    assert cred.expires_at.tzinfo == UTC
 
 
 async def test_oauth_extra_fields_collected(monkeypatch):

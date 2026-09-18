@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
+
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 
@@ -38,10 +39,10 @@ class ResolvedCredential:
         """True if the access token has expired (or expires within 60 s)."""
         if not self.expires_at:
             return False
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         exp = self.expires_at
         if exp.tzinfo is None:
-            exp = exp.replace(tzinfo=timezone.utc)
+            exp = exp.replace(tzinfo=UTC)
         return now >= exp - timedelta(seconds=60)
 
 

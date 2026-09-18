@@ -28,31 +28,31 @@ In both modes, tools retrieve credentials identically:
         return requests.get(url, headers={"Authorization": f"Bearer {creds.access_token}"}).text
 """
 
-from .types import (
-    ResolvedCredential,
-    CredentialError,
-    CredentialNotFoundError,
-    MissingCredentialHeaderError,
-)
-from .middleware import CredentialMiddleware
-from .helpers import get_credentials
-from .config import CredentialMode, get_mode
 from .backends import (
     CredentialBackend,
     EnvCredentialBackend,
     HeaderCredentialBackend,
 )
+from .config import CredentialMode, get_mode
+from .helpers import get_credentials
+from .middleware import CredentialMiddleware
+from .types import (
+    CredentialError,
+    CredentialNotFoundError,
+    MissingCredentialHeaderError,
+    ResolvedCredential,
+)
 
 __all__ = [
-    "ResolvedCredential",
-    "CredentialError",
-    "CredentialNotFoundError",
-    "MissingCredentialHeaderError",
-    "CredentialMiddleware",
-    "get_credentials",
-    "CredentialMode",
-    "get_mode",
     "CredentialBackend",
+    "CredentialError",
+    "CredentialMiddleware",
+    "CredentialMode",
+    "CredentialNotFoundError",
     "EnvCredentialBackend",
     "HeaderCredentialBackend",
+    "MissingCredentialHeaderError",
+    "ResolvedCredential",
+    "get_credentials",
+    "get_mode",
 ]
