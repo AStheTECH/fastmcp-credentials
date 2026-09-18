@@ -2,18 +2,18 @@
 
 Secure credential injection middleware for [FastMCP](https://github.com/jlowin/fastmcp) servers.
 
-Keeps secrets completely out of the LLM — credentials are resolved server-side and injected into tools transparently. The AI agent never sees tokens, API keys, or client secrets.
+Keeps secrets out of the LLM. Credentials are resolved server-side and injected into tools transparently, so the agent never sees tokens, API keys, or client secrets.
 
 ---
 
 ## How it works
 
 1. `CredentialMiddleware` intercepts every tool call and resolves credentials via the configured backend.
-2. Credentials are stored in a request-scoped `ContextVar` — they never leak between concurrent requests.
-3. Your tool calls `get_credentials()` — a plain synchronous function, no `await`, no `ctx` — to read them.
+2. Credentials are stored in a request-scoped `ContextVar`, so they never leak between concurrent requests.
+3. Your tool calls `get_credentials()` to read them. It's a plain synchronous function, no `await`, no `ctx`.
 4. After the tool returns (or raises), the `ContextVar` is always reset in a `finally` block.
 
-The LLM only ever sees your tool's business parameters. Auth is invisible to it by design.
+The LLM only ever sees your tool's business parameters, never the credentials.
 
 ---
 
@@ -23,19 +23,19 @@ The LLM only ever sees your tool's business parameters. Auth is invisible to it 
 pip install fastmcp-credentials
 ```
 
-Requires Python 3.11+ and `fastmcp==4.0.5` (pinned exactly — see below).
+Requires Python 3.11+ and `fastmcp==4.0.5` (pinned exactly, see below).
 
-`fastmcp-credentials` targets FastMCP 4 exclusively, built on MCP Python SDK v2 and
-the modern, **stateless** `2026-07-28` protocol (no `initialize` handshake, no
-`Mcp-Session-Id`). It no longer supports `fastmcp<4.0.0` or the legacy
-handshake-era protocol.
+This package targets FastMCP 4 only, built on MCP Python SDK v2 and the modern,
+stateless `2026-07-28` protocol. There's no `initialize` handshake and no
+`Mcp-Session-Id`. `fastmcp<4.0.0` and the older handshake-era protocol are not
+supported.
 
-`fastmcp` is declared as an exact version, not a range (`fastmcp==4.0.5`, never
-`>=` or `~=`). This package is consumed uniformly across the MewCP server fleet,
-so every consumer resolves to the same, fully-tested FastMCP version — a range
-here would let any future FastMCP release get silently picked up on the next
-unrelated dependency resolution. To move to a newer FastMCP patch, upgrade this
-package's pin and cut a new release rather than loosening it into a range.
+`fastmcp` is pinned to an exact version, not a range (`fastmcp==4.0.5`, never
+`>=` or `~=`). Every server in the MewCP fleet depends on this package, so they
+all need to resolve to the same, tested FastMCP version. A range here would let
+a future FastMCP release get picked up silently on the next unrelated redeploy.
+To move to a newer FastMCP patch, bump this pin and cut a new release instead
+of loosening it into a range.
 
 ---
 
@@ -48,15 +48,15 @@ package's pin and cut a new release rather than loosening it into a range.
 
 ---
 
-## Quick start — Static credentials (env vars)
+## Quick start: static credentials (env vars)
 
 Static credentials are arbitrary key/value fields loaded from environment variables. All fields are available on `cred.fields`.
 
 ```bash
-# Option 1 — JSON object (recommended for multi-field providers):
+# Option 1: JSON object (recommended for multi-field providers)
 export MYSERVICE_FIELDS='{"apiKey":"sk-abc123","secretKey":"xyz789"}'
 
-# Option 2 — individual FIELD_<name> vars (useful with secrets managers):
+# Option 2: individual FIELD_<name> vars (useful with secrets managers)
 export MYSERVICE_FIELD_apiKey=sk-abc123
 export MYSERVICE_FIELD_secretKey=xyz789
 ```
@@ -82,7 +82,7 @@ def search(query: str) -> list:
 
 ---
 
-## Quick start — OAuth (env vars)
+## Quick start: OAuth (env vars)
 
 For OAuth tokens, set `{PREFIX}CRED_TYPE=oauth`:
 
@@ -112,7 +112,7 @@ def list_items(folder_id: str) -> list:
 
 ---
 
-## Quick start — Gateway-injected credentials (hosted mode)
+## Quick start: gateway-injected credentials (hosted mode)
 
 For multi-user deployments where a gateway decrypts, refreshes, and injects credentials as HTTP headers before forwarding requests to your MCP server:
 
@@ -133,7 +133,7 @@ def call_api(resource_id: str) -> dict:
     ).json()
 ```
 
-The gateway sends these headers — no tool parameters, no LLM involvement:
+The gateway sends these headers directly. No tool parameters, no LLM involvement:
 
 ```
 X-MCP-Cred-Access-Token: ya29...
@@ -149,7 +149,7 @@ Tools access credentials identically to env-based mode via `get_credentials()`.
 
 ## OAuth extras
 
-Some OAuth providers include non-sensitive metadata alongside the token — a data-centre region, a workspace identifier, etc. These are collected into `cred.extra` for OAuth credentials only.
+Some OAuth providers include non-sensitive metadata alongside the token, like a data-centre region or a workspace identifier. These are collected into `cred.extra` for OAuth credentials only.
 
 **Env vars:** use the `{PREFIX}EXTRA_{NAME}` pattern.
 
@@ -188,7 +188,7 @@ mcp = FastMCP("My Service", middleware=[CredentialMiddleware(backend, "oauth")])
 ```
 
 ```bash
-# Local / self-hosted (default — no env var needed)
+# Local / self-hosted (default, no env var needed)
 # FASTMCP_CREDENTIAL_MODE=oss
 
 # Production behind a gateway
@@ -206,7 +206,7 @@ export FASTMCP_CREDENTIAL_MODE=hosted
 class ResolvedCredential:
     type: Literal["static", "oauth"]
 
-    # Static auth — all provider fields by name
+    # Static auth: all provider fields by name
     fields: dict[str, str]
 
     # OAuth
@@ -234,16 +234,16 @@ All variables use the prefix you pass to `EnvCredentialBackend(prefix="...")`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `{PREFIX}FIELDS` | — | JSON object with all static fields, e.g. `{"apiKey":"...","secretKey":"..."}` |
-| `{PREFIX}FIELD_{NAME}` | — | Individual static field (key name preserved as-is) → `cred.fields["NAME"]` |
-| `{PREFIX}EXTRA_{NAME}` | — | OAuth metadata only → `cred.extra["name"]` |
-| `{PREFIX}ACCESS_TOKEN` | — | OAuth access token |
-| `{PREFIX}REFRESH_TOKEN` | — | OAuth refresh token |
-| `{PREFIX}CLIENT_ID` | — | OAuth client identifier |
-| `{PREFIX}CLIENT_SECRET` | — | OAuth client secret |
-| `{PREFIX}TOKEN_URI` | — | Token refresh endpoint URL |
-| `{PREFIX}SCOPES` | — | Space-separated OAuth scopes |
-| `{PREFIX}EXPIRES_AT` | — | ISO 8601 token expiry (e.g. `2026-05-04T12:00:00+00:00`) |
+| `{PREFIX}FIELDS` | none | JSON object with all static fields, e.g. `{"apiKey":"...","secretKey":"..."}` |
+| `{PREFIX}FIELD_{NAME}` | none | Individual static field (key name preserved as-is) → `cred.fields["NAME"]` |
+| `{PREFIX}EXTRA_{NAME}` | none | OAuth metadata only → `cred.extra["name"]` |
+| `{PREFIX}ACCESS_TOKEN` | none | OAuth access token |
+| `{PREFIX}REFRESH_TOKEN` | none | OAuth refresh token |
+| `{PREFIX}CLIENT_ID` | none | OAuth client identifier |
+| `{PREFIX}CLIENT_SECRET` | none | OAuth client secret |
+| `{PREFIX}TOKEN_URI` | none | Token refresh endpoint URL |
+| `{PREFIX}SCOPES` | none | Space-separated OAuth scopes |
+| `{PREFIX}EXPIRES_AT` | none | ISO 8601 token expiry (e.g. `2026-05-04T12:00:00+00:00`) |
 
 `{PREFIX}FIELDS` takes priority over individual `{PREFIX}FIELD_{NAME}` vars when both are set.
 
