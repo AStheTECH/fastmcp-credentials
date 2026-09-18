@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
+
+from ..types import CredentialError, ResolvedCredential
 from .base import CredentialBackend
-from ..types import ResolvedCredential, CredentialError
 
 
 class EnvCredentialBackend(CredentialBackend):
@@ -110,7 +112,7 @@ class EnvCredentialBackend(CredentialBackend):
         if raw := os.environ.get(f"{p}EXPIRES_AT"):
             expires_at = datetime.fromisoformat(raw)
             if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
+                expires_at = expires_at.replace(tzinfo=UTC)
 
         return ResolvedCredential(
             type="oauth",

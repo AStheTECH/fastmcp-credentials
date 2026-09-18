@@ -1,12 +1,13 @@
 from __future__ import annotations
-import pytest
+
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
-from fastmcp_credentials.middleware import CredentialMiddleware, _current_credential
-from fastmcp_credentials.backends.base import CredentialBackend
-from fastmcp_credentials.types import ResolvedCredential, CredentialError
+import pytest
 
+from fastmcp_credentials.backends.base import CredentialBackend
+from fastmcp_credentials.middleware import CredentialMiddleware, _current_credential
+from fastmcp_credentials.types import CredentialError, ResolvedCredential
 
 # ---------------------------------------------------------------------------
 # Helpers

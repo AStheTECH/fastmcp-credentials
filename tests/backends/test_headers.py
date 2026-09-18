@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import json
-import pytest
-from datetime import timezone
+from datetime import UTC
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from fastmcp_credentials.backends.headers import HeaderCredentialBackend
 from fastmcp_credentials.types import MissingCredentialHeaderError
@@ -21,29 +23,31 @@ def _make_request(headers: dict[str, str]) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 async def test_oauth_raises_when_request_is_none():
-    with patch(_PATCH, return_value=None):
-        with pytest.raises(MissingCredentialHeaderError):
-            await HeaderCredentialBackend().resolve("oauth")
+    with patch(_PATCH, return_value=None), pytest.raises(MissingCredentialHeaderError):
+        await HeaderCredentialBackend().resolve("oauth")
 
 
 async def test_static_raises_when_request_is_none():
-    with patch(_PATCH, return_value=None):
-        with pytest.raises(MissingCredentialHeaderError):
-            await HeaderCredentialBackend().resolve("static")
+    with patch(_PATCH, return_value=None), pytest.raises(MissingCredentialHeaderError):
+        await HeaderCredentialBackend().resolve("static")
 
 
 async def test_oauth_raises_when_access_token_header_missing():
-    with patch(_PATCH, return_value=_make_request({})):
-        with pytest.raises(MissingCredentialHeaderError) as exc_info:
-            await HeaderCredentialBackend().resolve("oauth")
+    with (
+        patch(_PATCH, return_value=_make_request({})),
+        pytest.raises(MissingCredentialHeaderError) as exc_info,
+    ):
+        await HeaderCredentialBackend().resolve("oauth")
     assert "X-MCP-Cred-Access-Token" in str(exc_info.value)
     assert exc_info.value.missing_headers == ["X-MCP-Cred-Access-Token"]
 
 
 async def test_static_raises_when_fields_header_missing():
-    with patch(_PATCH, return_value=_make_request({})):
-        with pytest.raises(MissingCredentialHeaderError) as exc_info:
-            await HeaderCredentialBackend().resolve("static")
+    with (
+        patch(_PATCH, return_value=_make_request({})),
+        pytest.raises(MissingCredentialHeaderError) as exc_info,
+    ):
+        await HeaderCredentialBackend().resolve("static")
     assert "X-MCP-Cred-Fields" in str(exc_info.value)
     assert exc_info.value.missing_headers == ["X-MCP-Cred-Fields"]
 
@@ -200,7 +204,7 @@ async def test_naive_expires_at_normalized_to_utc():
     }
     with patch(_PATCH, return_value=_make_request(headers)):
         cred = await HeaderCredentialBackend().resolve("oauth")
-    assert cred.expires_at.tzinfo == timezone.utc
+    assert cred.expires_at.tzinfo == UTC
 
 
 async def test_expires_at_absent_gives_none():

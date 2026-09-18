@@ -1,6 +1,12 @@
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
-from fastmcp_credentials.types import ResolvedCredential, CredentialError, CredentialNotFoundError
+
+from datetime import UTC, datetime, timedelta
+
+from fastmcp_credentials.types import (
+    CredentialError,
+    CredentialNotFoundError,
+    ResolvedCredential,
+)
 
 
 class TestIsExpired:
@@ -10,14 +16,14 @@ class TestIsExpired:
     def test_far_future_returns_false(self):
         cred = ResolvedCredential(
             type="oauth",
-            expires_at=datetime.now(tz=timezone.utc) + timedelta(hours=1),
+            expires_at=datetime.now(tz=UTC) + timedelta(hours=1),
         )
         assert not cred.is_expired()
 
     def test_past_expiry_returns_true(self):
         cred = ResolvedCredential(
             type="oauth",
-            expires_at=datetime.now(tz=timezone.utc) - timedelta(seconds=1),
+            expires_at=datetime.now(tz=UTC) - timedelta(seconds=1),
         )
         assert cred.is_expired()
 
@@ -25,14 +31,14 @@ class TestIsExpired:
         # 59 s from now is inside the 60-second safety buffer
         cred = ResolvedCredential(
             type="oauth",
-            expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=59),
+            expires_at=datetime.now(tz=UTC) + timedelta(seconds=59),
         )
         assert cred.is_expired()
 
     def test_just_outside_buffer_is_not_expired(self):
         cred = ResolvedCredential(
             type="oauth",
-            expires_at=datetime.now(tz=timezone.utc) + timedelta(seconds=61),
+            expires_at=datetime.now(tz=UTC) + timedelta(seconds=61),
         )
         assert not cred.is_expired()
 
@@ -40,7 +46,7 @@ class TestIsExpired:
         # A naive datetime well in the past should still be expired
         cred = ResolvedCredential(
             type="oauth",
-            expires_at=datetime(2000, 1, 1),  # naive — no tzinfo
+            expires_at=datetime(2000, 1, 1),  # noqa: DTZ001 -- naive on purpose, tests naive-datetime handling
         )
         assert cred.is_expired()
 

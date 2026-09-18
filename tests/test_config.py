@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import pytest
-from fastmcp_credentials.config import get_mode, CredentialMode
+
+from fastmcp_credentials.config import CredentialMode, get_mode
 
 
 def test_default_mode_is_oss_when_env_var_absent(monkeypatch):

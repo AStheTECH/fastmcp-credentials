@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from fastmcp.server.dependencies import get_http_request
 
+from ..types import MissingCredentialHeaderError, ResolvedCredential
 from .base import CredentialBackend
-from ..types import ResolvedCredential, MissingCredentialHeaderError
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ def _parse_expires_at(raw: str | None) -> datetime | None:
     try:
         dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         logger.warning(
