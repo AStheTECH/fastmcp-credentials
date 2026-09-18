@@ -23,7 +23,19 @@ The LLM only ever sees your tool's business parameters. Auth is invisible to it 
 pip install fastmcp-credentials
 ```
 
-Requires Python 3.11+ and FastMCP 3.x.
+Requires Python 3.11+ and `fastmcp==4.0.5` (pinned exactly — see below).
+
+`fastmcp-credentials` targets FastMCP 4 exclusively, built on MCP Python SDK v2 and
+the modern, **stateless** `2026-07-28` protocol (no `initialize` handshake, no
+`Mcp-Session-Id`). It no longer supports `fastmcp<4.0.0` or the legacy
+handshake-era protocol.
+
+`fastmcp` is declared as an exact version, not a range (`fastmcp==4.0.5`, never
+`>=` or `~=`). This package is consumed uniformly across the MewCP server fleet,
+so every consumer resolves to the same, fully-tested FastMCP version — a range
+here would let any future FastMCP release get silently picked up on the next
+unrelated dependency resolution. To move to a newer FastMCP patch, upgrade this
+package's pin and cut a new release rather than loosening it into a range.
 
 ---
 

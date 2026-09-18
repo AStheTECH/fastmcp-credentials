@@ -1,6 +1,6 @@
 [project]
 name = "fastmcp-credentials"
-version = "0.1.1"
+version = "0.2.0"
 description = "Credential injection middleware for FastMCP servers — keeps secrets out of the LLM"
 authors = [
   { name="AStheTECH", email="contact@asthetech.com" },
@@ -23,7 +23,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "fastmcp>=3.2.4,<4",
+    "fastmcp==4.0.5",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +32,8 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "mypy>=1.0.0",
     "ruff>=0.4.0",
+    "httpx>=0.27.0",
+    "asgi-lifespan>=2.1.0",
 ]
 
 [tool.pytest.ini_options]
